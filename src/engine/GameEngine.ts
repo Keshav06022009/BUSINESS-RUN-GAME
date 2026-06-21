@@ -9,6 +9,8 @@ export class GameEngine {
   public player!: THREE.Mesh;
   public playerBox!: THREE.Box3; // For collision detection
 
+  private waterPlane!: THREE.Mesh;
+
   // Expose scene for TrackManager
   public getScene(): THREE.Scene {
     return this.scene;
@@ -29,14 +31,15 @@ export class GameEngine {
 
     // Setup Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x111111);
-    this.scene.fog = new THREE.Fog(0x111111, 20, 100);
+    const skyColor = new THREE.Color(0xBAE6FD);
+    this.scene.background = skyColor;
+    this.scene.fog = new THREE.Fog(skyColor, 20, 150);
 
     // Setup Camera
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    // Camera will follow player, initial offset
-    this.camera.position.set(0, 5, -10);
-    this.camera.lookAt(0, 0, 10);
+    // Camera will follow player, initial offset for mobile runner style
+    this.camera.position.set(0, 8, -12);
+    this.camera.lookAt(0, 2, 5);
 
     // Setup Renderer
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -44,6 +47,7 @@ export class GameEngine {
     this.renderer.setPixelRatio(window.devicePixelRatio);
 
     this.setupLighting();
+    this.createEnvironment();
     this.createPlayer();
 
     // Setup Input
@@ -54,12 +58,25 @@ export class GameEngine {
   }
 
   private setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     this.scene.add(ambientLight);
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(10, 20, 10);
+    dirLight.position.set(10, 20, -10);
     this.scene.add(dirLight);
+  }
+
+  private createEnvironment() {
+    const waterGeometry = new THREE.PlaneGeometry(2000, 2000);
+    const waterMaterial = new THREE.MeshStandardMaterial({
+      color: 0x22D3EE,
+      roughness: 0.2,
+      metalness: 0.1
+    });
+    this.waterPlane = new THREE.Mesh(waterGeometry, waterMaterial);
+    this.waterPlane.rotation.x = -Math.PI / 2;
+    this.waterPlane.position.y = -5; // Floating below the track
+    this.scene.add(this.waterPlane);
   }
 
   private createPlayer() {
@@ -107,6 +124,11 @@ export class GameEngine {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  public resetCamera() {
+    this.camera.position.z = this.player.position.z - 12;
+    this.camera.position.x = this.player.position.x * 0.3;
+  }
+
   public update(deltaTime: number) {
     if (stateManager.getState().gameOver) return;
 
@@ -129,13 +151,16 @@ export class GameEngine {
     // Update collision box
     this.playerBox.setFromObject(this.player);
 
+    // Update water plane position to follow player (infinite ocean effect)
+    this.waterPlane.position.z = this.player.position.z;
+
     // Update camera to follow player smoothly
-    const targetCameraZ = this.player.position.z - 8;
-    const targetCameraX = this.player.position.x * 0.5; // slight pan
+    const targetCameraZ = this.player.position.z - 12;
+    const targetCameraX = this.player.position.x * 0.3; // slight pan
 
     this.camera.position.z += (targetCameraZ - this.camera.position.z) * 5 * deltaTime;
     this.camera.position.x += (targetCameraX - this.camera.position.x) * 5 * deltaTime;
-    this.camera.lookAt(this.player.position.x, 2, this.player.position.z + 10);
+    this.camera.lookAt(this.player.position.x, 2, this.player.position.z + 5);
   }
 
   public render() {

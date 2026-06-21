@@ -62,38 +62,46 @@ export class TrackManager {
   }
 
   private createFloor() {
-    // Floor plane
-    const geometry = new THREE.PlaneGeometry(20, this.trackLength);
-    // Move origin to beginning of track (z=0 to z=trackLength)
-    geometry.translate(0, 0, this.trackLength / 2);
+    const platformWidth = 12;
+    const platformDepth = 2; // Thickness extending downwards
 
-    // Grid texture
-    const gridHelper = new THREE.GridHelper(this.trackLength, this.trackLength / 2, 0x444444, 0x222222);
-    gridHelper.rotation.x = Math.PI / 2;
-    gridHelper.position.set(0, 0.01, this.trackLength / 2); // Slightly above floor to avoid z-fighting
-    this.trackGroup.add(gridHelper);
+    // Floating Concrete Platform
+    const geometry = new THREE.BoxGeometry(platformWidth, platformDepth, this.trackLength);
+    // Move origin to beginning of track (z=0 to z=trackLength) and lower so top is at y=0
+    geometry.translate(0, -platformDepth / 2, this.trackLength / 2);
 
     const material = new THREE.MeshStandardMaterial({
-      color: 0x0a0a0a,
-      roughness: 0.8,
-      metalness: 0.2
+      color: 0xf3f4f6, // Light grey/white concrete
+      roughness: 0.9,
+      metalness: 0.1
     });
 
-    const floor = new THREE.Mesh(geometry, material);
-    floor.rotation.x = -Math.PI / 2;
+    const platform = new THREE.Mesh(geometry, material);
+    this.trackGroup.add(platform);
 
-    this.trackGroup.add(floor);
+    // Bright Neon Lane Dividers
+    this.createLaneDividers();
+  }
+
+  private createLaneDividers() {
+    const dividerWidth = 0.2;
+    const dividerHeight = 0.05; // Slightly above platform
+
+    // There are 3 lanes: Left (-3), Center (0), Right (3).
+    // Dividers go between them at x = -1.5 and x = 1.5
+    const dividerXPositions = [-1.5, 1.5];
+
+    const material = new THREE.MeshBasicMaterial({ color: 0xffffff }); // Bright solid white
+
+    for (const x of dividerXPositions) {
+      const geometry = new THREE.BoxGeometry(dividerWidth, dividerHeight, this.trackLength);
+      geometry.translate(x, dividerHeight / 2, this.trackLength / 2);
+      const divider = new THREE.Mesh(geometry, material);
+      this.trackGroup.add(divider);
+    }
   }
 
   private spawnGates(level: number, phase: number) {
-    const gateWidth = 2.5;
-    const gateHeight = 4;
-    const gateDepth = 0.5;
-
-    const geometry = new THREE.BoxGeometry(gateWidth, gateHeight, gateDepth);
-    // Origin at bottom center
-    geometry.translate(0, gateHeight / 2, 0);
-
     for (let i = 0; i < this.gateIncrements.length; i++) {
       const zPos = this.trackLength * this.gateIncrements[i];
 
@@ -108,66 +116,114 @@ export class TrackManager {
       // Randomize which side is positive/negative
       const isLeftPositive = Math.random() > 0.5;
 
-      this.createGateMesh(geometry, isLeftPositive ? leftData : rightData, leftLanePos, zPos);
-      this.createGateMesh(geometry, !isLeftPositive ? leftData : rightData, rightLanePos, zPos);
+      this.createArchwayGate(isLeftPositive ? leftData : rightData, leftLanePos, zPos);
+      this.createArchwayGate(!isLeftPositive ? leftData : rightData, rightLanePos, zPos);
     }
   }
 
-  private createGateMesh(geometry: THREE.BufferGeometry, data: GateData, xPos: number, zPos: number) {
-    const color = data.isPositive ? 0x10b981 : 0xe11d48; // Emerald Green : Ruby Red
+  private createArchwayGate(data: GateData, xPos: number, zPos: number) {
+    const gateGroup = new THREE.Group();
+    gateGroup.position.set(xPos, 0, zPos);
 
-    // Create materials (make front face a canvas texture)
-    const materials = [
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide }), // Right
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide }), // Left
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide }), // Top
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide }), // Bottom
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide }), // Front
-      this.createGateTextureMaterial(data, color), // Back (Facing the player)
-    ];
+    const gateWidth = 2.8;
+    const gateHeight = 4.5;
+    const pillarThickness = 0.3;
 
-    const mesh = new THREE.Mesh(geometry, materials);
-    mesh.position.set(xPos, 0, zPos);
+    // High-Contrast Solid Colors
+    const color = data.isPositive ? 0x4ADE80 : 0xF87171; // Neon Green : Candy Red
+    const frameMaterial = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.4,
+      metalness: 0.1
+    });
 
-    // Create bounding box for collision
-    const box = new THREE.Box3().setFromObject(mesh);
+    // 1. Left Pillar
+    const pillarGeo = new THREE.BoxGeometry(pillarThickness, gateHeight, pillarThickness);
+    pillarGeo.translate(0, gateHeight / 2, 0);
+    const leftPillar = new THREE.Mesh(pillarGeo, frameMaterial);
+    leftPillar.position.x = -gateWidth / 2 + pillarThickness / 2;
+    gateGroup.add(leftPillar);
 
-    this.trackGroup.add(mesh);
-    this.gates.push({ mesh, data, box, active: true });
+    // 2. Right Pillar
+    const rightPillar = new THREE.Mesh(pillarGeo, frameMaterial);
+    rightPillar.position.x = gateWidth / 2 - pillarThickness / 2;
+    gateGroup.add(rightPillar);
+
+    // 3. Top Beam
+    const beamGeo = new THREE.BoxGeometry(gateWidth, pillarThickness, pillarThickness);
+    const topBeam = new THREE.Mesh(beamGeo, frameMaterial);
+    topBeam.position.y = gateHeight - pillarThickness / 2;
+    gateGroup.add(topBeam);
+
+    // 4. Semi-transparent Glowing Curtain (where collision and text happens)
+    const curtainWidth = gateWidth - pillarThickness * 2;
+    const curtainHeight = gateHeight - pillarThickness;
+    const curtainGeo = new THREE.PlaneGeometry(curtainWidth, curtainHeight);
+    // Origin at bottom center of curtain
+    curtainGeo.translate(0, curtainHeight / 2, 0);
+
+    const curtainMaterial = this.createCurtainMaterial(data, data.isPositive ? 'rgba(74, 222, 128, 0.5)' : 'rgba(248, 113, 113, 0.5)');
+    const curtain = new THREE.Mesh(curtainGeo, curtainMaterial);
+    curtain.position.z = 0;
+    gateGroup.add(curtain);
+
+    // Create bounding box for collision (using the curtain)
+    // Needs to be updated in world space
+    const box = new THREE.Box3();
+
+    // We add the group to the track, then compute the box
+    this.trackGroup.add(gateGroup);
+    gateGroup.updateMatrixWorld();
+    box.setFromObject(curtain);
+
+    // Give it some depth for collision since planes have 0 depth
+    box.min.z -= 0.5;
+    box.max.z += 0.5;
+
+    this.gates.push({ mesh: gateGroup as any, data, box, active: true });
   }
 
-  private createGateTextureMaterial(data: GateData, _baseColor: number): THREE.MeshBasicMaterial {
+  private createCurtainMaterial(data: GateData, bgRgba: string): THREE.MeshBasicMaterial {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 1024;
     const ctx = canvas.getContext('2d')!;
 
-    // Background
-    ctx.fillStyle = data.isPositive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(225, 29, 72, 0.4)';
+    // Semi-transparent glowing background
+    ctx.fillStyle = bgRgba;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Border
-    ctx.strokeStyle = data.isPositive ? '#34d399' : '#fb7185';
-    ctx.lineWidth = 20;
-    ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
-
-    // Text Styling
-    ctx.fillStyle = 'white';
+    // Text Styling Setup
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
 
-    // Header
-    ctx.font = 'bold 60px "Segoe UI"';
-    this.wrapText(ctx, data.header, canvas.width / 2, 200, 400, 70);
-
-    // Subtext
+    // Draw Header
     ctx.font = 'bold 80px "Segoe UI"';
-    ctx.fillText(data.subtext, canvas.width / 2, 800);
+    ctx.lineWidth = 15;
+    ctx.strokeStyle = 'black'; // Thick black border
+    ctx.fillStyle = 'white'; // White text
+
+    // Invert the context horizontally because the player looks at the back of the plane (-z)
+    // while moving forward (+z)
+    ctx.save();
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+
+    this.wrapText(ctx, data.header, canvas.width / 2, 300, 480, 90);
+
+    // Draw Subtext
+    ctx.font = 'bold 100px "Segoe UI"';
+    ctx.strokeText(data.subtext, canvas.width / 2, 700);
+    ctx.fillText(data.subtext, canvas.width / 2, 700);
+
+    ctx.restore();
 
     const texture = new THREE.CanvasTexture(canvas);
     return new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      depthWrite: false // helps with transparency sorting
     });
   }
 
@@ -180,6 +236,7 @@ export class TrackManager {
       const metrics = ctx.measureText(testLine);
       const testWidth = metrics.width;
       if (testWidth > maxWidth && n > 0) {
+        ctx.strokeText(line, x, y);
         ctx.fillText(line, x, y);
         line = words[n] + ' ';
         y += lineHeight;
@@ -188,6 +245,7 @@ export class TrackManager {
         line = testLine;
       }
     }
+    ctx.strokeText(line, x, y);
     ctx.fillText(line, x, y);
   }
 

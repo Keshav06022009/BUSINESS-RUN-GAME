@@ -61,6 +61,7 @@ function checkLevelEnd() {
 
     // Reset player position
     engine.player.position.z = 0;
+    engine.resetCamera();
 
     // Generate new track for the next level
     const state = stateManager.getState();
