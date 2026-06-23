@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { stateManager } from '../state/StateManager';
 
 export class GameEngine {
@@ -6,8 +7,13 @@ export class GameEngine {
   public camera: THREE.PerspectiveCamera;
   public renderer: THREE.WebGLRenderer;
 
-  public player!: THREE.Mesh;
+  public player!: THREE.Group;
   public playerBox!: THREE.Box3; // For collision detection
+
+  // Animation mixer for the real model
+  private mixer: THREE.AnimationMixer | null = null;
+  private runAction: THREE.AnimationAction | null = null;
+  private isModelLoaded: boolean = false;
 
   private waterPlane!: THREE.Mesh;
 
@@ -20,9 +26,9 @@ export class GameEngine {
   private baseForwardSpeed = 20;
 
   // Lane configuration
-  private lanes = [-3, 0, 3]; // Left, Center, Right x-coordinates
-  private currentLaneIndex = 1; // Start in center
-  private targetX = 0;
+  private lanes = [-1.5, 1.5]; // Left and Right x-coordinates (2 lanes)
+  private currentLaneIndex = 0; // Start on the left
+  private targetX = -1.5;
   private lateralSpeed = 15; // Speed of switching lanes
 
   constructor(canvasId: string) {
@@ -80,24 +86,46 @@ export class GameEngine {
   }
 
   private createPlayer() {
-    // Sleek geometric box/capsule placeholder
-    const geometry = new THREE.BoxGeometry(1, 2, 2);
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x3b82f6,
-      roughness: 0.2,
-      metalness: 0.8
-    });
-    this.player = new THREE.Mesh(geometry, material);
-    this.player.position.set(0, 1, 0); // y=1 so it rests on the floor (y=0)
-
-    // Outline for style
-    const edges = new THREE.EdgesGeometry(geometry);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 }));
-    this.player.add(line);
-
+    this.player = new THREE.Group();
     this.scene.add(this.player);
+    this.playerBox = new THREE.Box3().setFromObject(this.player); // Initial small box
 
-    this.playerBox = new THREE.Box3().setFromObject(this.player);
+    const loader = new GLTFLoader();
+    loader.load('/CesiumMan.glb', (gltf) => {
+      const model = gltf.scene;
+
+      // Face forward down the track
+      model.rotation.y = Math.PI / 2;
+
+      // The CesiumMan is quite small, scale him up
+      model.scale.set(1.5, 1.5, 1.5);
+
+      // Add to our player group
+      this.player.add(model);
+
+      // Update collision box to fit model
+      this.playerBox.setFromObject(this.player);
+
+      // Setup Animations
+      this.mixer = new THREE.AnimationMixer(model);
+
+      // Find the walk/run animation
+      if (gltf.animations && gltf.animations.length > 0) {
+        this.runAction = this.mixer.clipAction(gltf.animations[0]);
+        this.runAction.play();
+      }
+
+      this.isModelLoaded = true;
+    }, undefined, (error) => {
+      console.error("An error occurred loading the player model:", error);
+
+      // Fallback: create a basic box if the model fails to load
+      const geo = new THREE.BoxGeometry(1, 2, 1);
+      geo.translate(0, 1, 0);
+      const mat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+      const mesh = new THREE.Mesh(geo, mat);
+      this.player.add(mesh);
+    });
   }
 
   private setupControls() {
@@ -135,7 +163,8 @@ export class GameEngine {
     const speedMod = stateManager.getSpeedModifier();
 
     // Auto-forward movement
-    const forwardMove = this.baseForwardSpeed * speedMod * deltaTime;
+    const forwardSpeed = this.baseForwardSpeed * speedMod;
+    const forwardMove = forwardSpeed * deltaTime;
     this.player.position.z += forwardMove;
 
     // Lateral movement (smooth lane switching)
@@ -146,6 +175,15 @@ export class GameEngine {
       } else {
         this.player.position.x = Math.max(this.player.position.x - step, this.targetX);
       }
+    }
+
+    // Update Animation Mixer
+    if (this.mixer && this.isModelLoaded) {
+      // Scale animation speed with movement speed
+      if (this.runAction) {
+         this.runAction.timeScale = speedMod * 1.5;
+      }
+      this.mixer.update(deltaTime);
     }
 
     // Update collision box
