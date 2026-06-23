@@ -12,7 +12,7 @@ export interface GateData {
 export class TrackManager {
   private scene: THREE.Scene;
   private trackLength: number = 800; // Total length of a level
-  private lanes = [-3, 0, 3];
+  private lanes = [-1.5, 1.5]; // 2 Lanes
 
   private trackGroup: THREE.Group;
   private gates: { mesh: THREE.Mesh, data: GateData, box: THREE.Box3, active: boolean }[] = [];
@@ -62,16 +62,15 @@ export class TrackManager {
   }
 
   private createFloor() {
-    const platformWidth = 12;
-    const platformDepth = 2; // Thickness extending downwards
+    const platformWidth = 6; // Narrower for 2 lanes
+    const platformDepth = 1.5; // Thickness extending downwards
 
-    // Floating Concrete Platform
+    // Floating Concrete Platform (Tan colored)
     const geometry = new THREE.BoxGeometry(platformWidth, platformDepth, this.trackLength);
-    // Move origin to beginning of track (z=0 to z=trackLength) and lower so top is at y=0
     geometry.translate(0, -platformDepth / 2, this.trackLength / 2);
 
     const material = new THREE.MeshStandardMaterial({
-      color: 0xf3f4f6, // Light grey/white concrete
+      color: 0xd2c4ab, // Warm tan/beige concrete
       roughness: 0.9,
       metalness: 0.1
     });
@@ -79,26 +78,43 @@ export class TrackManager {
     const platform = new THREE.Mesh(geometry, material);
     this.trackGroup.add(platform);
 
-    // Bright Neon Lane Dividers
+    // Thick Yellow Borders
+    const borderWidth = 0.6;
+    const borderMaterial = new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.5 }); // Golden/Yellow
+
+    const borderLeftGeo = new THREE.BoxGeometry(borderWidth, platformDepth + 0.1, this.trackLength);
+    borderLeftGeo.translate(-platformWidth / 2 + borderWidth / 2, -platformDepth / 2 + 0.05, this.trackLength / 2);
+    const borderLeft = new THREE.Mesh(borderLeftGeo, borderMaterial);
+
+    const borderRightGeo = new THREE.BoxGeometry(borderWidth, platformDepth + 0.1, this.trackLength);
+    borderRightGeo.translate(platformWidth / 2 - borderWidth / 2, -platformDepth / 2 + 0.05, this.trackLength / 2);
+    const borderRight = new THREE.Mesh(borderRightGeo, borderMaterial);
+
+    this.trackGroup.add(borderLeft);
+    this.trackGroup.add(borderRight);
+
+    // Dashed Center Divider
     this.createLaneDividers();
   }
 
   private createLaneDividers() {
-    const dividerWidth = 0.2;
-    const dividerHeight = 0.05; // Slightly above platform
+    // Create a dashed line material
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0.01, 0),
+      new THREE.Vector3(0, 0.01, this.trackLength)
+    ]);
 
-    // There are 3 lanes: Left (-3), Center (0), Right (3).
-    // Dividers go between them at x = -1.5 and x = 1.5
-    const dividerXPositions = [-1.5, 1.5];
+    const lineMat = new THREE.LineDashedMaterial({
+      color: 0x555555, // Dark grey
+      linewidth: 5,
+      scale: 1,
+      dashSize: 2,
+      gapSize: 2,
+    });
 
-    const material = new THREE.MeshBasicMaterial({ color: 0xffffff }); // Bright solid white
-
-    for (const x of dividerXPositions) {
-      const geometry = new THREE.BoxGeometry(dividerWidth, dividerHeight, this.trackLength);
-      geometry.translate(x, dividerHeight / 2, this.trackLength / 2);
-      const divider = new THREE.Mesh(geometry, material);
-      this.trackGroup.add(divider);
-    }
+    const line = new THREE.Line(lineGeo, lineMat);
+    line.computeLineDistances(); // Required for LineDashedMaterial to work
+    this.trackGroup.add(line);
   }
 
   private spawnGates(level: number, phase: number) {
@@ -107,7 +123,7 @@ export class TrackManager {
 
       // Binary choice: Left and Right lanes
       const leftLanePos = this.lanes[0];
-      const rightLanePos = this.lanes[2];
+      const rightLanePos = this.lanes[1];
 
       // Generate random data for left and right gates
       const leftData = this.generateGateData(phase, level, true); // One positive
